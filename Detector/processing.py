@@ -33,6 +33,7 @@ class Post(object):
                  obj_threshold,
                  nms_threshold,
                  CATEGORY_NUM,
+                 anchors,
                  batch_size,
                  yolo_input_resolution):
         """Initialize with all values that will be kept when processing several frames.
@@ -48,7 +49,7 @@ class Post(object):
         input resolution in HW order
         """
         self.masks = [(6, 7, 8), (3, 4, 5), (0, 1, 2)]
-        self.anchors = [(10, 13), (16, 30), (33, 23), (30, 61), (62, 45), (59, 119), (116, 90), (156, 198), (373, 326)]
+        self.anchors = anchors
         self.object_threshold = obj_threshold
         self.batch_size = batch_size
         self.nms_threshold = nms_threshold

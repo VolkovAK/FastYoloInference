@@ -8,7 +8,7 @@ import re
 import yolo2onnx
 import onnx2tensorrt
 import processing
-
+import cfgparser
 
 class YOLO_TRT():
     def __init__(self,
@@ -30,7 +30,8 @@ class YOLO_TRT():
             raise Exception('Error: {} does not exists, init failed!'.format(cfg_file_path))
         with open(cfg_file_path, 'r') as cfg_file:
             yolo_cfg = cfg_file.read()
-        net_width = int(re.sub('[^0-9]', '', list(filter(lambda x: (x.find('#') == -1) & ('width' in x), yolo_cfg.split('\n')))[0]))  # get width (and height, since input is square)
+        anchors = cfgparser.get_anchors(yolo_cfg)
+        net_width = cfgparser.get_net_width(yolo_cfg)
         self.input_size = (net_width, net_width)
 
         if not os.path.exists(classes_file_path):
@@ -63,7 +64,7 @@ class YOLO_TRT():
         print('Execution context created')
 
         self.preprocessor = processing.Pre(self.input_size)
-        self.postprocessor = processing.Post(obj_thresh, nms_thresh, self.classes_num, self.batch_size, self.input_size)
+        self.postprocessor = processing.Post(obj_thresh, nms_thresh, self.classes_num, anchors, self.batch_size, self.input_size)
 
         self.bindings = []
         self.outputs = []
