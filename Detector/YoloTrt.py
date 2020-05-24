@@ -5,10 +5,10 @@ import tensorrt as trt
 import cv2
 import re
 
-import yolo2onnx
-import onnx2tensorrt
-import processing
-import cfgparser
+from Detector import yolo2onnx
+from Detector import onnx2tensorrt
+from Detector import processing
+from Detector import cfgparser
 
 class YOLO_TRT():
     def __init__(self,
@@ -30,32 +30,38 @@ class YOLO_TRT():
             raise Exception('Error: {} does not exists, init failed!'.format(cfg_file_path))
         with open(cfg_file_path, 'r') as cfg_file:
             yolo_cfg = cfg_file.read()
+
         anchors = cfgparser.get_anchors(yolo_cfg)
         net_width = cfgparser.get_net_width(yolo_cfg)
-        self.input_size = (net_width, net_width)
+        net_height = cfgparser.get_net_width(yolo_cfg)
+        self.input_size = (net_height, net_width)
 
         if not os.path.exists(classes_file_path):
             raise Exception('Error: {} does not exists, init failed!'.format(classes_file_path))
         with open(classes_file_path, 'r') as classes_file:
             self.classes_num = len(classes_file.read().split())
 
-        engine_file_path = os.path.join(os.path.dirname(cfg_file_name), '{}_{}_b{}.trt'.format(
+        engine_file_path = os.path.join(os.path.dirname(cfg_file_path), '{}_{}_b{}.trt'.format(
             cfg_file_name.rstrip('.cfg'), 
             weights_file_name.rstrip('.weights').rstrip('.pt').rstrip('.pth'),
             batch_size))
-        onnx_file_path = os.path.join(os.path.dirname(cfg_file_name), '{}_{}_b{}.onnx'.format(
+        onnx_file_path = os.path.join(os.path.dirname(cfg_file_path), '{}_{}_b{}.onnx'.format(
             cfg_file_name.rstrip('.cfg'), 
             weights_file_name.rstrip('.weights').rstrip('.pt').rstrip('.pth'),
             batch_size))
 
         if not os.path.exists(engine_file_path):
-            print('Engine is not found, building...')
+            print('Engine was not found, building...')
             if not os.path.exists(onnx_file_path):
-                print('Onnx is not found, converting...')
+                print('ONNX was not found, converting...')
                 yolo2onnx.convert(cfg_file_path, weights_file_path, onnx_file_path)
                 print('ONNX {} saved'.format(onnx_file_path))
+            else: 
+                print('ONNX was found: {}'.format(onnx_file_path))
             onnx2tensorrt.build_engine(onnx_file_path, batch_size, engine_file_path)
-            print(('TRT engine {} saved'.format(engine_file_path))
+            print('TRT engine {} saved'.format(engine_file_path))
+        else:
+            print('TensorRT engine was found: {}'.format(engine_file_path))
 
         TRT_LOGGER = trt.Logger()
         with open(engine_file_path, 'rb') as f, trt.Runtime(TRT_LOGGER) as runtime:
@@ -64,7 +70,7 @@ class YOLO_TRT():
         print('Execution context created')
 
         self.preprocessor = processing.Pre(self.input_size)
-        self.postprocessor = processing.Post(obj_thresh, nms_thresh, self.classes_num, anchors, self.batch_size, self.input_size)
+        self.postprocessor = processing.Post(obj_thresh, nms_thresh, self.classes_num, anchors[0], self.batch_size, self.input_size)
 
         self.bindings = []
         self.outputs = []
