@@ -115,7 +115,13 @@ class YOLO_TRT():
         images_torch = self.preprocessor.process_batch(images)
         self.bindings[0] = int(images_torch.data_ptr())
 
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
         inference_status = self.context.execute_v2(bindings=self.bindings)
+        torch.cuda.synchronize()
+        end.record()
+        print('engine inference {}'.format(start.elapsed_time(end)))
 
         boxes, classes, confs, batch_ids = self.postprocessor.process_batch(self.outputs, [image.shape[:2] for image in images])
 
