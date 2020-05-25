@@ -2,6 +2,9 @@
 *.weights
 *.onnx
 *.trt
+*.pt
+*.pth
+*.pb
 
 # Media
 *.jpg
