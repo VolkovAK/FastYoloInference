@@ -39,7 +39,7 @@ class YOLO_TRT():
         if not os.path.exists(classes_file_path):
             raise Exception('Error: {} does not exists, init failed!'.format(classes_file_path))
         with open(classes_file_path, 'r') as classes_file:
-            self.classes_num = len(classes_file.read().split())
+            self.classes_num = len(classes_file.read().split('\n'))-1
 
         engine_file_path = os.path.join(os.path.dirname(cfg_file_path), '{}_{}_b{}.trt'.format(
             cfg_file_name.rstrip('.cfg'), 

@@ -27,12 +27,12 @@ class Pre(object):
 
 
 class Post(object):
-    """Class for post-processing the three outputs tensors from YOLOv3-608."""
+    """Class for post-processing the three outputs tensors from YOLO"""
 
     def __init__(self,
                  obj_threshold,
                  nms_threshold,
-                 CATEGORY_NUM,
+                 classes_num,
                  anchors,
                  batch_size,
                  yolo_input_resolution):
@@ -53,7 +53,7 @@ class Post(object):
         self.object_threshold = obj_threshold
         self.batch_size = batch_size
         self.nms_threshold = nms_threshold
-        self.CATEGORY_NUM = CATEGORY_NUM
+        self.classes_num = classes_num
         self.input_resolution_yolo = torch.tensor(yolo_input_resolution).to(torch.float16).cuda()
 
         self.grids = []
@@ -78,9 +78,9 @@ class Post(object):
             anchor = anchor / self.input_resolution_yolo
             self.anchors_cuda.append(anchor)
 
-        self.output_shapes = [(batch_size, (CATEGORY_NUM + 5) * 3, self.sizes[0], self.sizes[0]),
-                              (batch_size, (CATEGORY_NUM + 5) * 3, self.sizes[1], self.sizes[1]),
-                              (batch_size, (CATEGORY_NUM + 5) * 3, self.sizes[2], self.sizes[2])]
+        self.output_shapes = [(batch_size, (classes_num + 5) * 3, self.sizes[0], self.sizes[0]),
+                              (batch_size, (classes_num + 5) * 3, self.sizes[1], self.sizes[1]),
+                              (batch_size, (classes_num + 5) * 3, self.sizes[2], self.sizes[2])]
 
 
 
@@ -112,8 +112,8 @@ class Post(object):
         dim0 = batch_size
         dim1, dim2 = height, width
         dim3 = 3
-        # There are CATEGORY_NUM=80 object categories:
-        dim4 = (4 + 1 + self.CATEGORY_NUM)
+        # There are classes_num=80 object categories:
+        dim4 = (4 + 1 + self.classes_num)
         return torch.reshape(output, (dim0, dim1, dim2, dim3, dim4))
 
     def _process_yolo_output_batch(self, outputs_reshaped, raw_sizes):
@@ -150,7 +150,7 @@ class Post(object):
             h, w = raw_sizes[batch]
             boxes[batch_inds == batch] = boxes[batch_inds == batch] * torch.tensor([w, h, w, h])
 
-        keep = ops.boxes.batched_nms(boxes, confidences, categories + (batch_inds * self.CATEGORY_NUM), self.nms_threshold)
+        keep = ops.boxes.batched_nms(boxes, confidences, categories + (batch_inds * self.classes_num), self.nms_threshold)
 
         if len(keep) == 0:
             return np.array([]), np.array([]), np.array([]), np.array([])
@@ -200,7 +200,7 @@ class Post(object):
         x,y,height,width coordinates of the boxes
         box_confidences -- bounding box confidences with shape (height,width,3,1); 1 for as
         confidence scalar per element
-        box_class_probs -- class probabilities with shape (height,width,3,CATEGORY_NUM)
+        box_class_probs -- class probabilities with shape (height,width,3,classes_num)
 
         """
         box_scores = box_confidences * box_class_probs

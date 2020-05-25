@@ -34,11 +34,11 @@ class FYDetector():
 
 
     def detect(self, frame):
-        boxes, classes, confs, batch_ids = self.yolo.detect([frame])
+        boxes, classes, confs = self.yolo.detect([frame])
         return boxes
 
     def detect_batch(self, frames):
-        boxes, classes, confs, batch_ids = self.yolo.detect(frames)
+        boxes, classes, confs = self.yolo.detect(frames)
 
         return boxes
 
