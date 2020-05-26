@@ -5,6 +5,7 @@
 *.pt
 *.pth
 *.pb
+*.deb
 
 # Media
 *.jpg
