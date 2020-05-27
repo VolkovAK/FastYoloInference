@@ -33,12 +33,10 @@ class FYDetector():
             self.acceptable_classes = filter_classes
 
 
-    def detect(self, frame):
-        boxes, classes, confs = self.yolo.detect([frame])
-        return boxes
-
-    def detect_batch(self, frames):
-        boxes, classes, confs = self.yolo.detect(frames)
-
+    def detect(self, data):
+        if type(data) is list:
+            boxes, classes, confs = self.yolo.detect(data)
+        else:
+            boxes, classes, confs = self.yolo.detect(data)
         return boxes
 

@@ -176,19 +176,18 @@ class Post(object):
         anchors = self.anchors_cuda[scale_factor]
 
         # Reshape to N, height, width, num_anchors, box_params:
-        box_xy = torch.sigmoid(output_reshaped[:, ..., :2])
-        box_wh = torch.exp(output_reshaped[:, ..., 2:4]) * anchors
-        box_confidence = torch.sigmoid(output_reshaped[:, ..., 4])
+        box_xy = torch.sigmoid(output_reshaped[:, ..., :2])          # 0, 1 - x, y
+        box_wh = torch.exp(output_reshaped[:, ..., 2:4]) * anchors   # 2, 3 - w, h
+        box_confidence = torch.sigmoid(output_reshaped[:, ..., 4])   # 4 - objectness
         box_confidence.unsqueeze_(-1)
-        box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:])
+        box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:]) # 5, ... - classes probs
 
-        box_xy += self.grids[scale_factor]
+        box_xy += self.grids[scale_factor]                          
         box_xy /= self.sizes_cuda[scale_factor]
         box_xy -= (box_wh / self.number_two)
         boxes = torch.cat((box_xy, box_xy + box_wh), axis=-1)
 
         # boxes: centroids, box_confidence: confidence level, box_class_probs:
-        # class confidence
         return boxes, box_confidence, box_class_probs
 
     def _filter_boxes_batch(self, boxes, box_confidences, box_class_probs):

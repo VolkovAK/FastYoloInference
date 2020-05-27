@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import time
+import onnx 
 import torch
 
 from Detector.FYDetector import FYDetector
@@ -17,7 +18,7 @@ def main():
     weights_path = '../yolov3.weights'
     names_path = '../coco.names'
 
-    detector = FYDetector(cfg_path, weights_path, names_path)
+    detector = FYDetector(cfg_path, weights_path, names_path, batch_size=8)
 
     img = cv2.imread('img.jpg')
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -26,7 +27,7 @@ def main():
         #start = torch.cuda.Event(enable_timing=True)
         #end = torch.cuda.Event(enable_timing=True)
         #start.record()
-        out = detector.detect(img)
+        out = detector.detect([img]*8)
         #torch.cuda.synchronize()
         #end.record()
         #print(start.elapsed_time(end))
