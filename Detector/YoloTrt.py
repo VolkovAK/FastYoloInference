@@ -35,6 +35,7 @@ class YOLO_TRT():
         masks = cfgparser.get_masks(yolo_cfg)
         if len(anchors) != len(masks):
             raise Exception('Error: check anchors and masks! Got {} masks, {} anchors'.format(len(masks), len(anchors)))
+        classes = cfgparser.get_classes(yolo_cfg)
         net_width = cfgparser.get_net_width(yolo_cfg)
         net_height = cfgparser.get_net_width(yolo_cfg)
         self.input_size = (net_height, net_width)
@@ -74,7 +75,7 @@ class YOLO_TRT():
         print('Execution context created')
 
         self.preprocessor = processing.Pre(self.input_size)
-        self.postprocessor = processing.Post(obj_thresh, nms_thresh, self.classes_num, anchors[0], self.batch_size, self.input_size)
+        self.postprocessor = processing.Post(obj_thresh, nms_thresh, self.classes_num, anchors[0], masks, self.batch_size, self.input_size)
 
         self.bindings = []
         self.outputs = []

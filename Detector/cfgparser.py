@@ -29,7 +29,6 @@ def get_net_height(cfg):
 
 def get_all_occurrences(cfg, to_find):
     cfg = cfg.split('\n')
-
     occurs = []
     for line in cfg:
         if to_find in line:
@@ -40,13 +39,21 @@ def get_all_occurrences(cfg, to_find):
                 occurs.append(line)
     return occurs
 
+def filter_comments(lines_list):
+    filtered_list = []
+    for line in lines_list:
+        if line.find('#') != -1:
+            line = line[:line.find('#')]
+        filtered_list.append(line)
+    return filtered_list
+
+
 
 def get_anchors(cfg): # all anchors, however in the most cases they would be the same
     anchors = get_all_occurrences(cfg, 'anchors')
+    anchors = filter_comments(anchors)
     parsed_anchors = []
     for anchor in anchors:
-        if anchor.find('#') != -1:
-            anchor = anchor[:anchor.find('#')]
         anchors = re.findall('[0-9]+', anchor)
         if len(anchors) == 0:
             raise ValueError('Can not get anchors, check .cfg file!')
@@ -58,10 +65,9 @@ def get_anchors(cfg): # all anchors, however in the most cases they would be the
 
 def get_masks(cfg):  # masks for anchors
     masks = get_all_occurrences(cfg, 'mask')    
+    masks = filter_comments(masks)
     parsed_masks = []
     for mask in masks:
-        if mask.find('#') != -1:
-            mask = mask[:mask.find('#')]
         anchors_idx = re.findall('[0-9]+', mask)
         if len(anchors_idx) == 0:
             raise ValueError('Can not get masks, check .cfg file!')
@@ -69,4 +75,17 @@ def get_masks(cfg):  # masks for anchors
     return parsed_masks 
 
 
+def get_classes(cfg):
+    classes = get_all_occurrences(cfg, 'classes')
+    classes = filter_comments(classes)
+    parsed_classes = []
+    for cl in classes:
+        cl = re.findall('[0-9]+', cl)
+        if len(cl) == 0:
+            raise ValueError('Can not get classes, check .cfg file!')
+        parsed_classes.append(int(cl[0]))
+    if len(set(parsed_classes)) != 1:
+        raise ValueError('There must be the same "classes" in each [yolo], check .cfg file!')
+    return parsed_classes[0] # we need only one number
+ 
 

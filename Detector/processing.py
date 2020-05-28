@@ -10,7 +10,7 @@ from torchvision import ops
 class Pre(object):
 
     def __init__(self, yolo_input_resolution):
-        """Initialize with the input resolution for YOLOv3, which will stay fixed in this sample.
+        """Initialize with the input resolution for YOLOv3, which will stay fixed.
 
         Keyword arguments:
         yolo_input_resolution -- two-dimensional tuple with the target network's (spatial)
@@ -34,6 +34,7 @@ class Post(object):
                  nms_threshold,
                  classes_num,
                  anchors,
+                 masks,
                  batch_size,
                  yolo_input_resolution):
         """Initialize with all values that will be kept when processing several frames.
@@ -48,7 +49,7 @@ class Post(object):
         input_resolution_yolo -- two-dimensional tuple with the target network's (spatial)
         input resolution in HW order
         """
-        self.masks = [(6, 7, 8), (3, 4, 5), (0, 1, 2)]
+        self.masks = masks
         self.anchors = anchors
         self.object_threshold = obj_threshold
         self.batch_size = batch_size
@@ -57,8 +58,8 @@ class Post(object):
         self.input_resolution_yolo = torch.tensor(yolo_input_resolution).to(torch.float16).cuda()
 
         self.grids = []
-        yis = yolo_input_resolution[0]
-        self.sizes = [yis//2//2//2//2//2, yis//2//2//2//2, yis//2//2//2]
+        yis = yolo_input_resolution[0] # create different for X and Y
+        self.sizes = [yis//2//2//2//2//2, yis//2//2//2//2, yis//2//2//2] # create more flexible
         for size in self.sizes:
             col = np.tile(np.arange(0, size), size).reshape(-1, size)
             row = np.tile(np.arange(0, size).reshape(-1, 1), size)
@@ -68,7 +69,7 @@ class Post(object):
             grid = np.concatenate((col, row), axis=-1)
             self.grids.append(torch.tensor(grid).to(torch.float16).cuda())
 
-        self.sizes_cuda = [torch.tensor([size, size]).cuda() for size in self.sizes]
+        self.sizes_cuda = [torch.tensor([size, size]).cuda() for size in self.sizes] # ???????
         self.number_two = torch.tensor(2).cuda()
         self.anchors_cuda = []
         self.image_dims = None
@@ -85,7 +86,7 @@ class Post(object):
 
 
     def process_batch(self, outputs, raw_sizes):
-        outputs_reshaped = list()
+        outputs_reshaped = []
         for i, output in enumerate(outputs): # 3 scales
             output_reshaped = self._reshape_output_batch(i, output)
             outputs_reshaped.append(output_reshaped)
