@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import time
-import onnx 
+import onnx # we must import onnx before pytorch to avoid segfault while onnx converting :/ (seems to be solved in pytorch 1.5.0)
 import torch
 
 from Detector.FYDetector import FYDetector

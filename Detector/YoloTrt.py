@@ -1,5 +1,5 @@
 import os
-import onnx # we must import onnx before pytorch to avoid segfault while onnx converting :/
+import onnx # we must import onnx before pytorch to avoid segfault while onnx converting :/ (seems to be solved in pytorch 1.5.0)
 import torch
 import tensorrt as trt
 import cv2
@@ -32,6 +32,9 @@ class YOLO_TRT():
             yolo_cfg = cfg_file.read()
 
         anchors = cfgparser.get_anchors(yolo_cfg)
+        masks = cfgparser.get_masks(yolo_cfg)
+        if len(anchors) != len(masks):
+            raise Exception('Error: check anchors and masks! Got {} masks, {} anchors'.format(len(masks), len(anchors)))
         net_width = cfgparser.get_net_width(yolo_cfg)
         net_height = cfgparser.get_net_width(yolo_cfg)
         self.input_size = (net_height, net_width)
@@ -45,6 +48,7 @@ class YOLO_TRT():
             cfg_file_name.rstrip('.cfg'), 
             weights_file_name.rstrip('.weights').rstrip('.pt').rstrip('.pth'),
             batch_size))
+
         onnx_file_path = os.path.join(os.path.dirname(cfg_file_path), '{}_{}_b{}.onnx'.format(
             cfg_file_name.rstrip('.cfg'), 
             weights_file_name.rstrip('.weights').rstrip('.pt').rstrip('.pth'),

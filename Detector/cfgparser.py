@@ -27,32 +27,46 @@ def get_net_height(cfg):
     return get_net_input_param(cfg, 'height')
 
 
-
-def get_anchors(cfg):
+def get_all_occurrences(cfg, to_find):
     cfg = cfg.split('\n')
 
-    anchors = []
+    occurs = []
     for line in cfg:
-        if 'anchors' in line:
+        if to_find in line:
             if '#' in line:
-                if line.find('#') > line.find('anchors'):
-                    anchors.append(line)
+                if line.find('#') > line.find(to_find):
+                    occurs.append(line)
             else:
-                anchors.append(line)
+                occurs.append(line)
+    return occurs
 
+
+def get_anchors(cfg): # all anchors, however in the most cases they would be the same
+    anchors = get_all_occurrences(cfg, 'anchors')
     parsed_anchors = []
     for anchor in anchors:
-        anchor = re.search('[0-9][0-9, ]*[0-9]', anchor)
-        if anchor is None:
+        if anchor.find('#') != -1:
+            anchor = anchor[:anchor.find('#')]
+        anchors = re.findall('[0-9]+', anchor)
+        if len(anchors) == 0:
             raise ValueError('Can not get anchors, check .cfg file!')
-        else:
-            anchor = anchor.group()
-            anchor = list(map(int, anchor.replace(' ', '').split(',')))
-            anchor = [(anchor[i], anchor[i+1])for i in range(0, len(anchor), 2)]
-            parsed_anchors.append(anchor)
-
+        anchors = list(map(int, anchors))
+        anchors = [(anchors[i], anchors[i+1]) for i in range(0, len(anchors), 2)]
+        parsed_anchors.append(anchors)
     return parsed_anchors
 
 
 def get_masks(cfg):  # masks for anchors
-    pass
+    masks = get_all_occurrences(cfg, 'mask')    
+    parsed_masks = []
+    for mask in masks:
+        if mask.find('#') != -1:
+            mask = mask[:mask.find('#')]
+        anchors_idx = re.findall('[0-9]+', mask)
+        if len(anchors_idx) == 0:
+            raise ValueError('Can not get masks, check .cfg file!')
+        parsed_masks.append([int(a) for a in anchors_idx])
+    return parsed_masks 
+
+
+
