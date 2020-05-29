@@ -19,10 +19,19 @@ class Pre(object):
         self.yolo_input_resolution = yolo_input_resolution
 
     def process_batch(self, input_images):
-        inps = [torch.as_tensor(cv2.resize(image, self.yolo_input_resolution).astype(np.float32), device='cuda:0').unsqueeze_(0) for image in input_images]
+        inps = []
+        for image in input_images:
+            img = cv2.resize(image, self.yolo_input_resolution)
+            img_t = torch.as_tensor(img)
+            img_t.unsqueeze_(0)
+            inps.append(img_t.to(device='cuda:0', non_blocking=True))
         images = torch.cat(inps, axis=0)
-        images /= 255.0
         images = images.permute([0, 3, 1, 2]).flatten()
+        images = images/255.0
+        #inps = [torch.as_tensor(cv2.resize(image, self.yolo_input_resolution).astype(np.float32), device='cuda:0').unsqueeze_(0) for image in input_images]
+        #images = torch.cat(inps, axis=0)
+        #images /= 255.0
+        #images = images.permute([0, 3, 1, 2]).flatten()
         return images
 
 

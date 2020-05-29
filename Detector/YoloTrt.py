@@ -79,6 +79,7 @@ class YOLO_TRT():
 
         self.bindings = []
         self.outputs = []
+        self.timings = {'pre':[], 'exec':[], 'post':[]}
         for binding in self.engine:
             index = self.engine.get_binding_index(binding)
             if self.engine.binding_is_input(binding):
@@ -91,7 +92,6 @@ class YOLO_TRT():
                 torch_mem = torch.empty(size=tuple(shape), dtype=dtype_torch, device='cuda')
                 self.bindings.append(int(torch_mem.data_ptr()))
                 self.outputs.append(torch_mem)
-
 
 
     def torch_dtype_from_trt(self, dtype):
@@ -117,18 +117,42 @@ class YOLO_TRT():
         N-th element of output list holds data for n-th input image
 
         '''
-        images_torch = self.preprocessor.process_batch(images)
-        self.bindings[0] = int(images_torch.data_ptr())
-
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
         start.record()
-        inference_status = self.context.execute_v2(bindings=self.bindings)
+        torch.cuda.synchronize()
+        images_torch = self.preprocessor.process_batch(images)
+        self.bindings[0] = int(images_torch.data_ptr())
         torch.cuda.synchronize()
         end.record()
-        print('engine inference {}'.format(start.elapsed_time(end)))
+        torch.cuda.synchronize()
+        pre_time = start.elapsed_time(end)
+        self.timings['pre'].append(pre_time)
+        print('preprocessing time {:.5} ms'.format(pre_time))
 
+        start_exec = torch.cuda.Event(enable_timing=True)
+        end_exec = torch.cuda.Event(enable_timing=True)
+        start_exec.record()
+        torch.cuda.synchronize()
+        inference_status = self.context.execute_v2(bindings=self.bindings)
+        torch.cuda.synchronize()
+        end_exec.record()
+        torch.cuda.synchronize()
+        exec_time = start_exec.elapsed_time(end_exec)
+        self.timings['exec'].append(exec_time)
+        print('engine inference {:.5} ms'.format(exec_time))
+
+        start_post = torch.cuda.Event(enable_timing=True)
+        end_post = torch.cuda.Event(enable_timing=True)
+        start_post.record()
+        torch.cuda.synchronize()
         boxes, classes, confs, batch_ids = self.postprocessor.process_batch(self.outputs, [image.shape[:2] for image in images])
+        torch.cuda.synchronize()
+        end_post.record()
+        torch.cuda.synchronize()
+        post_time = start_post.elapsed_time(end_post)
+        self.timings['post'].append(post_time)
+        print('postprocessing time {:.5} ms'.format(post_time))
 
         out_boxes = []
         out_classes = []
