@@ -28,10 +28,6 @@ class Pre(object):
         images = torch.cat(inps, axis=0)
         images = images.permute([0, 3, 1, 2]).flatten()
         images = images/255.0
-        #inps = [torch.as_tensor(cv2.resize(image, self.yolo_input_resolution).astype(np.float32), device='cuda:0').unsqueeze_(0) for image in input_images]
-        #images = torch.cat(inps, axis=0)
-        #images /= 255.0
-        #images = images.permute([0, 3, 1, 2]).flatten()
         return images
 
 
@@ -82,8 +78,8 @@ class Post(object):
         self.number_two = torch.tensor(2).cuda()
         self.anchors_cuda = []
         self.image_dims = None
-        for mask in self.masks:
-            anchor = torch.tensor([self.anchors[i] for i in mask]).to(torch.float16).cuda()
+        for i_m, mask in enumerate(self.masks):
+            anchor = torch.tensor([self.anchors[i_m][i] for i in mask]).to(torch.float16).cuda()
             anchor = anchor.reshape([1, 1, 3, 2])  # reshape 1 1 3 2, because 3 anchors in every mask
             anchor = anchor / self.input_resolution_yolo
             self.anchors_cuda.append(anchor)
@@ -149,11 +145,11 @@ class Post(object):
             confidences.append(confidence)
             batch_indses.append(batch_inds)
             factor += 1
-
+        
         boxes = torch.cat(boxes).cpu()
         categories = torch.cat(categories).cpu()
         confidences = torch.cat(confidences).cpu()
-        batch_inds = torch.cat(batch_indses).cpu()
+        batch_inds = torch.cat(batch_indses).cpu()#to(device='cpu', non_blocking=True)
 
         # Scale boxes back to original image shape:
         for batch in batch_inds.unique():
@@ -183,6 +179,12 @@ class Post(object):
         mask -- 2-dimensional tuple with mask specification for this output
         """
 
+        torch.cuda.synchronize()
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        torch.cuda.synchronize()
+        start.record()
+        torch.cuda.synchronize()
         anchors = self.anchors_cuda[scale_factor]
 
         # Reshape to N, height, width, num_anchors, box_params:
@@ -192,11 +194,16 @@ class Post(object):
         box_confidence.unsqueeze_(-1)
         box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:]) # 5, ... - classes probs
 
+
         box_xy += self.grids[scale_factor]                          
         box_xy /= self.sizes_cuda[scale_factor]
         box_xy -= (box_wh / self.number_two)
         boxes = torch.cat((box_xy, box_xy + box_wh), axis=-1)
 
+        torch.cuda.synchronize()
+        end.record()
+        torch.cuda.synchronize()
+        print('_process_feats_batch {} ms'.format(start.elapsed_time(end)))
         # boxes: centroids, box_confidence: confidence level, box_class_probs:
         return boxes, box_confidence, box_class_probs
 

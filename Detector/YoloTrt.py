@@ -75,7 +75,7 @@ class YOLO_TRT():
         print('Execution context created')
 
         self.preprocessor = processing.Pre(self.input_size)
-        self.postprocessor = processing.Post(obj_thresh, nms_thresh, self.classes_num, anchors[0], masks, self.batch_size, self.input_size)
+        self.postprocessor = processing.Post(obj_thresh, nms_thresh, self.classes_num, anchors, masks, self.batch_size, self.input_size)
 
         self.bindings = []
         self.outputs = []
