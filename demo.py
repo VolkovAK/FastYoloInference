@@ -22,7 +22,7 @@ def main():
 
     img = cv2.imread('img.jpg')
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    for _ in range(100):
+    for _ in range(30):
         prev = time.time()
         #start = torch.cuda.Event(enable_timing=True)
         #end = torch.cuda.Event(enable_timing=True)
