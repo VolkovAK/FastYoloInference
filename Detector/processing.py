@@ -192,12 +192,12 @@ class Post(object):
         mask -- 2-dimensional tuple with mask specification for this output
         """
 
- #       torch.cuda.synchronize()
- #       start = torch.cuda.Event(enable_timing=True)
- #       end = torch.cuda.Event(enable_timing=True)
- #       torch.cuda.synchronize()
- #       start.record()
- #       torch.cuda.synchronize()
+        torch.cuda.synchronize()
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        torch.cuda.synchronize()
+        start.record()
+        torch.cuda.synchronize()
 
         anchors = self.anchors_cuda[scale_factor]
 #
@@ -212,40 +212,54 @@ class Post(object):
 #
         box_xy = torch.sigmoid(output_reshaped[:, ..., :2])          # 0, 1 - x, y
         box_wh = torch.exp(output_reshaped[:, ..., 2:4]) * anchors   # 2, 3 - w, h
-        box_confidence = torch.sigmoid(output_reshaped[:, ..., 4])   # 4 - objectness
-        box_confidence.unsqueeze_(-1)
+        box_confidence = torch.sigmoid(output_reshaped[:, ..., 4:5])   # 4 - objectness
+        #box_confidence.unsqueeze_(-1)
         box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:]) # 5, ... - classes probs
         box_xy += self.grids[scale_factor]                          
         box_xy /= self.sizes_cuda[scale_factor]
         box_xy -= (box_wh / self.number_two)
         boxes = torch.cat((box_xy, box_xy + box_wh), axis=-1)
-        #out = boxes, box_confidence, box_class_probs
-        #print(boxes.shape, box_confidence.shape, box_class_probs.shape)
 
-        #first_filter = torch.where(box_confidence >= self.object_threshold)
-        #print(first_filter)
+        torch.cuda.synchronize()
+        end.record()
+        torch.cuda.synchronize()
+        print('decoding {} ms'.format(start.elapsed_time(end)))
+        torch.cuda.synchronize()
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        torch.cuda.synchronize()
+        start.record()
+        torch.cuda.synchronize()
+
+        first_filter = torch.where(box_confidence >= self.object_threshold)
         #box_confidence = box_confidence[first_filter[:-1]]
         #box_class_probs = box_class_probs[first_filter[:-1]]
         #boxes = boxes[first_filter[:-1]]
-        #print(boxes.shape, box_confidence.shape, box_class_probs.shape)
 
-        box_scores = box_confidence * box_class_probs
-        #print(box_scores)
+        torch.cuda.synchronize()
+        end.record()
+        torch.cuda.synchronize()
+        print('filtering {} ms'.format(start.elapsed_time(end)))
+        torch.cuda.synchronize()
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        torch.cuda.synchronize()
+        start.record()
+        torch.cuda.synchronize()
+
+        box_scores = box_confidence[first_filter[:-1]] * box_class_probs[first_filter[:-1]]
         box_class_scores = torch.max(box_scores, axis=-1)
-        #print(box_class_scores)
         box_classes = box_class_scores.indices
         box_class_scores = box_class_scores.values
         pos = torch.where(box_class_scores >= self.object_threshold)
-        #print(boxes.shape, box_classes.shape, box_class_scores.shape)
-        #print(pos)
-        out = boxes[pos], box_classes[pos], box_class_scores[pos], pos[0]
+        out = boxes[first_filter[:-1]][pos], box_classes[pos], box_class_scores[pos], first_filter[0][pos[0]]
+        #out = boxes[pos], box_classes[pos], box_class_scores[pos], pos[0]
 
         
 
-        #torch.cuda.synchronize()
-        #end.record()
-        #torch.cuda.synchronize()
-        #print('_process_feats_batch {} ms'.format(start.elapsed_time(end)))
-        # boxes: centroids, box_confidence: confidence level, box_class_probs:
+        torch.cuda.synchronize()
+        end.record()
+        torch.cuda.synchronize()
+        print('final filtering {} ms'.format(start.elapsed_time(end)))
         return out 
 
