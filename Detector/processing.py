@@ -7,6 +7,38 @@ import onnx
 import torch
 from torchvision import ops
 
+
+import traceback
+class cutotime():
+    def __init__(self, name):
+        self.name = name
+
+    def __enter__(self):
+        torch.cuda.synchronize()
+        self.start = torch.cuda.Event(enable_timing=True)
+        self.end = torch.cuda.Event(enable_timing=True)
+        torch.cuda.synchronize()
+        self.start.record()
+        torch.cuda.synchronize()
+
+    def __exit__(self, exc_type, exc_value, tb):
+        torch.cuda.synchronize()
+        self.end.record()
+        torch.cuda.synchronize()
+        if exc_type is not None:
+            traceback.print_exception(exc_type, exc_value, tb)
+        print('{} - {:.5f} ms'.format(self.name, self.start.elapsed_time(self.end)))
+
+    def start(self):
+        self.__enter__()
+        return self
+
+    def stop(self):
+        self.__exit__(None, None, None)
+
+
+
+
 class Pre(object):
 
     def __init__(self, yolo_input_resolution):
@@ -80,13 +112,18 @@ class Post(object):
         self.image_dims = None
         for i_m, mask in enumerate(self.masks):
             anchor = torch.tensor([self.anchors[i_m][i] for i in mask]).to(torch.float16).cuda()
-            anchor = anchor.reshape([1, 1, 3, 2])  # reshape 1 1 3 2, because 3 anchors in every mask
+            anchor = anchor.reshape([1, 1, 3, 2])  # reshape 1 1 3 2, because 3 anchors in every mask # CHANGE 3 to MASK LEN
             anchor = anchor / self.input_resolution_yolo
             self.anchors_cuda.append(anchor)
 
-        self.output_shapes = [(batch_size, (classes_num + 5) * 3, self.sizes[0], self.sizes[0]),
+        self.output_shapes = [(batch_size, (classes_num + 5) * 3, self.sizes[0], self.sizes[0]), # CHANGE 3 TO MASK LEN
                               (batch_size, (classes_num + 5) * 3, self.sizes[1], self.sizes[1]),
                               (batch_size, (classes_num + 5) * 3, self.sizes[2], self.sizes[2])]
+        
+        self.batch_inds = []
+        for i, mask in enumerate(self.masks):
+            batch_inds_vector_len = len(mask) * self.sizes[i] * self.sizes[i]
+            self.batch_inds.append(torch.tensor(np.arange(batch_size)).repeat_interleave(batch_inds_vector_len).cuda())
 
 
 
@@ -112,6 +149,8 @@ class Post(object):
         Keyword argument:
         output -- an output from a TensorRT engine after inference
         """
+        #tt = cutotime('reshape')
+        #tt.start()
         output = output.reshape(self.output_shapes[number])
         output = output.permute(0, 2, 3, 1)
         batch_size, height, width, _ = output.shape
@@ -120,7 +159,9 @@ class Post(object):
         dim3 = 3
         # There are classes_num=80 object categories:
         dim4 = (4 + 1 + self.classes_num)
-        return torch.reshape(output, (dim0, dim1, dim2, dim3, dim4))
+        out = torch.reshape(output, (dim0, dim1, dim2, dim3, dim4))
+        #tt.stop()
+        return out 
 
     def _process_yolo_output_batch(self, outputs_reshaped, raw_sizes):
         """Take in a list of three reshaped YOLO outputs in (batch,height,width,3,85) shape and return
@@ -138,27 +179,13 @@ class Post(object):
         boxes, categories, confidences, batch_indses = list(), list(), list(), list()
         factor = 0
         for output, mask in zip(outputs_reshaped, self.masks):
-#            torch.cuda.synchronize()
-#            start = torch.cuda.Event(enable_timing=True)
-#            end = torch.cuda.Event(enable_timing=True)
-#            torch.cuda.synchronize()
-#            start.record()
-#            torch.cuda.synchronize()
-
-            #box, category, confidence = self._process_feats_batch(output, mask, factor)
-            #box, category, confidence, batch_inds = self._filter_boxes_batch(box, category, confidence)
             box, category, confidence, batch_inds = self._process_feats_batch(output, mask, factor)
             boxes.append(box)
             categories.append(category)
             confidences.append(confidence)
             batch_indses.append(batch_inds)
             factor += 1
-#
-#            torch.cuda.synchronize()
-#            end.record()
-#            torch.cuda.synchronize()
-#            print('_process {} ms'.format(start.elapsed_time(end)))
-#        
+
         boxes = torch.cat(boxes).cpu()
         categories = torch.cat(categories).cpu()
         confidences = torch.cat(confidences).cpu()
@@ -192,15 +219,12 @@ class Post(object):
         mask -- 2-dimensional tuple with mask specification for this output
         """
 
-        torch.cuda.synchronize()
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        torch.cuda.synchronize()
-        start.record()
-        torch.cuda.synchronize()
+ #       whole_proc = cutotime('whole processing').start()
 
         anchors = self.anchors_cuda[scale_factor]
-#
+
+ # TRY THIS
+
 #        # Reshape to N, height, width, num_anchors, box_params:
 #        box_wh = torch.exp(output_reshaped[:, ..., 2:4]) * anchors   # 2, 3 - w, h
 #        loh = torch.sigmoid(output_reshaped)
@@ -208,58 +232,39 @@ class Post(object):
 #        box_xy /= self.sizes_cuda[scale_factor]
 #        box_xy -= (box_wh / self.number_two)
 #        boxes = torch.cat((box_xy, box_xy + box_wh), axis=-1)
-#        out = boxes, loh[:, ..., 4].unsqueeze(-1), loh[:, ..., 5:]
-#
+#        out = boxes, loh[:, ..., 4:5], loh[:, ..., 5:]
+
+
+# FILTER BEFORE SIGMOIDS?
         box_xy = torch.sigmoid(output_reshaped[:, ..., :2])          # 0, 1 - x, y
         box_wh = torch.exp(output_reshaped[:, ..., 2:4]) * anchors   # 2, 3 - w, h
-        box_confidence = torch.sigmoid(output_reshaped[:, ..., 4:5])   # 4 - objectness
-        #box_confidence.unsqueeze_(-1)
-        box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:]) # 5, ... - classes probs
+        box_confidence = torch.sigmoid(output_reshaped[:, ..., 4:5]).flatten(end_dim=-2) # 4 - objectness
+        box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:]).flatten(end_dim=-2) # 5, ... - classes probs
         box_xy += self.grids[scale_factor]                          
         box_xy /= self.sizes_cuda[scale_factor]
         box_xy -= (box_wh / self.number_two)
-        boxes = torch.cat((box_xy, box_xy + box_wh), axis=-1)
-
-        torch.cuda.synchronize()
-        end.record()
-        torch.cuda.synchronize()
-        print('decoding {} ms'.format(start.elapsed_time(end)))
-        torch.cuda.synchronize()
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        torch.cuda.synchronize()
-        start.record()
-        torch.cuda.synchronize()
+        boxes = torch.cat((box_xy, box_xy + box_wh), axis=-1).flatten(end_dim=-2)
 
         first_filter = torch.where(box_confidence >= self.object_threshold)
         #box_confidence = box_confidence[first_filter[:-1]]
         #box_class_probs = box_class_probs[first_filter[:-1]]
         #boxes = boxes[first_filter[:-1]]
 
-        torch.cuda.synchronize()
-        end.record()
-        torch.cuda.synchronize()
-        print('filtering {} ms'.format(start.elapsed_time(end)))
-        torch.cuda.synchronize()
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        torch.cuda.synchronize()
-        start.record()
-        torch.cuda.synchronize()
-
         box_scores = box_confidence[first_filter[:-1]] * box_class_probs[first_filter[:-1]]
         box_class_scores = torch.max(box_scores, axis=-1)
         box_classes = box_class_scores.indices
         box_class_scores = box_class_scores.values
         pos = torch.where(box_class_scores >= self.object_threshold)
-        out = boxes[first_filter[:-1]][pos], box_classes[pos], box_class_scores[pos], first_filter[0][pos[0]]
+#        print(self.batch_inds[scale_factor].shape, boxes.shape)
+#        print(self.batch_inds[scale_factor][first_filter[0]][pos[0]])
+#        print(first_filter)
+# MAYBE BATCH_INDS SHOULD BE IN CPU????
+#        print(pos)
+        out = boxes[first_filter[:-1]][pos], box_classes[pos], box_class_scores[pos], self.batch_inds[scale_factor][first_filter[0]][pos[0]]
+        #out = boxes[first_filter[:-1]][pos], box_classes[pos], box_class_scores[pos], first_filter[0][pos[0]]
         #out = boxes[pos], box_classes[pos], box_class_scores[pos], pos[0]
 
         
-
-        torch.cuda.synchronize()
-        end.record()
-        torch.cuda.synchronize()
-        print('final filtering {} ms'.format(start.elapsed_time(end)))
+#        whole_proc.stop()
         return out 
 
