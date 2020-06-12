@@ -128,7 +128,7 @@ class YOLO_TRT():
         torch.cuda.synchronize()
         pre_time = start.elapsed_time(end)
         self.timings['pre'].append(pre_time)
-        print('preprocessing time {:.5} ms'.format(pre_time))
+        #print('preprocessing time {:.5} ms'.format(pre_time))
 
         start_exec = torch.cuda.Event(enable_timing=True)
         end_exec = torch.cuda.Event(enable_timing=True)
@@ -140,7 +140,7 @@ class YOLO_TRT():
         torch.cuda.synchronize()
         exec_time = start_exec.elapsed_time(end_exec)
         self.timings['exec'].append(exec_time)
-        print('engine inference {:.5} ms'.format(exec_time))
+        #print('engine inference {:.5} ms'.format(exec_time))
 
         start_post = torch.cuda.Event(enable_timing=True)
         end_post = torch.cuda.Event(enable_timing=True)
@@ -152,7 +152,7 @@ class YOLO_TRT():
         torch.cuda.synchronize()
         post_time = start_post.elapsed_time(end_post)
         self.timings['post'].append(post_time)
-        print('postprocessing time {:.5} ms'.format(post_time))
+        #print('postprocessing time {:.5} ms'.format(post_time))
 
         out_boxes = []
         out_classes = []

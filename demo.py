@@ -18,11 +18,11 @@ def main():
     weights_path = '../yolov3.weights'
     names_path = '../coco.names'
 
-    detector = FYDetector(cfg_path, weights_path, names_path, batch_size=8)
+    detector = FYDetector(cfg_path, weights_path, names_path, batch_size=1)
 
     img = cv2.imread('img.jpg')
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    for _ in range(30):
+    for _ in range(100):
         prev = time.time()
         #start = torch.cuda.Event(enable_timing=True)
         #end = torch.cuda.Event(enable_timing=True)

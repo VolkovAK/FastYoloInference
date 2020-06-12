@@ -219,7 +219,7 @@ class Post(object):
         mask -- 2-dimensional tuple with mask specification for this output
         """
 
- #       whole_proc = cutotime('whole processing').start()
+       # whole_proc = cutotime('whole processing').start()
 
         anchors = self.anchors_cuda[scale_factor]
 
@@ -236,35 +236,62 @@ class Post(object):
 
 
 # FILTER BEFORE SIGMOIDS?
-        box_xy = torch.sigmoid(output_reshaped[:, ..., :2])          # 0, 1 - x, y
+        box_confidence = torch.sigmoid(output_reshaped[:, ..., 4:5]).flatten(start_dim=1, end_dim=-2) # 4 - objectness
+        #print(box_confidence.shape)
+        first_filter = torch.where(box_confidence >= self.object_threshold)
+
+
+        #print(torch.sigmoid(output_reshaped[:, ..., :2]).shape)
+        box_xy = torch.sigmoid(output_reshaped[:, ..., :2]).flatten(start_dim=1, end_dim=-2)[first_filter[:-1]]          # 0, 1 - x, y
+        #print(box_xy.shape)
         box_wh = torch.exp(output_reshaped[:, ..., 2:4]) * anchors   # 2, 3 - w, h
-        box_confidence = torch.sigmoid(output_reshaped[:, ..., 4:5]).flatten(end_dim=-2) # 4 - objectness
-        box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:]).flatten(end_dim=-2) # 5, ... - classes probs
-        box_xy += self.grids[scale_factor]                          
+        box_wh = box_wh.flatten(start_dim=1, end_dim=-2)[first_filter[:-1]]
+        box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:]).flatten(start_dim=1, end_dim=-2)[first_filter[:-1]] # 5, ... - classes probs
+        #print(first_filter)
+        #print(first_filter[:-2])
+        #print(self.grids[scale_factor].shape)
+        #print(self.grids[scale_factor])
+        #print(self.grids[scale_factor].flatten(end_dim=-2).shape)
+        #print(self.grids[scale_factor].flatten(end_dim=-2))
+        #print(self.grids[scale_factor].flatten(end_dim=-2)[first_filter[1]].shape)
+        #print(self.grids[scale_factor].flatten(end_dim=-2)[first_filter[1]])
+        box_xy += self.grids[scale_factor].flatten(end_dim=-2)[first_filter[1]] 
+# WRONG ASWER`
         box_xy /= self.sizes_cuda[scale_factor]
         box_xy -= (box_wh / self.number_two)
         boxes = torch.cat((box_xy, box_xy + box_wh), axis=-1).flatten(end_dim=-2)
+        #boxes = torch.cat((box_xy, box_xy + box_wh), axis=-1).flatten(end_dim=-2)
 
-        first_filter = torch.where(box_confidence >= self.object_threshold)
-        #box_confidence = box_confidence[first_filter[:-1]]
-        #box_class_probs = box_class_probs[first_filter[:-1]]
-        #boxes = boxes[first_filter[:-1]]
+        #print(box_confidence.shape)
+        #print(box_confidence[first_filter[:-1]].shape)
+        #print(box_class_probs.shape)
 
-        box_scores = box_confidence[first_filter[:-1]] * box_class_probs[first_filter[:-1]]
+        box_scores = box_confidence[first_filter[:-1]] * box_class_probs
+        #print(box_scores.shape)
+        #print(box_scores)
+        #box_scores = box_confidence[first_filter[:-1]] * box_class_probs[first_filter[:-1]]
         box_class_scores = torch.max(box_scores, axis=-1)
         box_classes = box_class_scores.indices
         box_class_scores = box_class_scores.values
+        #print(box_class_scores.shape)
         pos = torch.where(box_class_scores >= self.object_threshold)
-#        print(self.batch_inds[scale_factor].shape, boxes.shape)
-#        print(self.batch_inds[scale_factor][first_filter[0]][pos[0]])
-#        print(first_filter)
+        #print(pos)
 # MAYBE BATCH_INDS SHOULD BE IN CPU????
-#        print(pos)
-        out = boxes[first_filter[:-1]][pos], box_classes[pos], box_class_scores[pos], self.batch_inds[scale_factor][first_filter[0]][pos[0]]
+        #out = boxes[first_filter[:-1]][pos], box_classes[pos], box_class_scores[pos], self.batch_inds[scale_factor][first_filter[0]][pos[0]]
+        #print(boxes.shape)
+        #print(self.batch_inds[scale_factor][first_filter[0]][pos[0]].shape)
+        #print(self.batch_inds[scale_factor][first_filter[1]][pos[0]])
+        #print(self.batch_inds[scale_factor])
+        #print(len(self.batch_inds[scale_factor]))
+        #print(first_filter[1] + first_filter[0])
+        #print('f[0]',first_filter[0])
+        #print(self.batch_inds[scale_factor][first_filter[1]])
+        out = boxes[pos], box_classes[pos], box_class_scores[pos], first_filter[0][pos[0]]
+        #out = boxes[pos], box_classes[pos], box_class_scores[pos], self.batch_inds[scale_factor][first_filter[0]][pos[0]]
         #out = boxes[first_filter[:-1]][pos], box_classes[pos], box_class_scores[pos], first_filter[0][pos[0]]
         #out = boxes[pos], box_classes[pos], box_class_scores[pos], pos[0]
 
         
-#        whole_proc.stop()
+       # whole_proc.stop()
         return out 
 
