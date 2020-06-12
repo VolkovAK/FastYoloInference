@@ -112,7 +112,11 @@ class Post(object):
         self.image_dims = None
         for i_m, mask in enumerate(self.masks):
             anchor = torch.tensor([self.anchors[i_m][i] for i in mask]).to(torch.float16).cuda()
-            anchor = anchor.reshape([1, 1, 3, 2])  # reshape 1 1 3 2, because 3 anchors in every mask # CHANGE 3 to MASK LEN
+            print(anchor)
+            print(anchor.shape)
+            anchor = anchor.repeat(self.sizes[i_m] * self.sizes[i_m], 1)
+            print(anchor.shape)
+            print(anchor)
             anchor = anchor / self.input_resolution_yolo
             self.anchors_cuda.append(anchor)
 
@@ -236,27 +240,30 @@ class Post(object):
 
 
 # FILTER BEFORE SIGMOIDS?
+        #box_confidence = torch.sigmoid(output_reshaped[:, ..., 4:5]) # 4 - objectness
         box_confidence = torch.sigmoid(output_reshaped[:, ..., 4:5]).flatten(start_dim=1, end_dim=-2) # 4 - objectness
-        #print(box_confidence.shape)
         first_filter = torch.where(box_confidence >= self.object_threshold)
+        #print(output_reshaped.flatten(start_dim=1, end_dim=-2).shape)
+        output_reshaped = output_reshaped.flatten(start_dim=1, end_dim=-2)[first_filter[:-1]]
+        #print(output_reshaped.shape)
 
-
+        #print('ff',first_filter)
         #print(torch.sigmoid(output_reshaped[:, ..., :2]).shape)
-        box_xy = torch.sigmoid(output_reshaped[:, ..., :2]).flatten(start_dim=1, end_dim=-2)[first_filter[:-1]]          # 0, 1 - x, y
+        box_xy = torch.sigmoid(output_reshaped[:, ..., :2])           # 0, 1 - x, y
+        #box_xy = torch.sigmoid(output_reshaped[:, ..., :2]).flatten(start_dim=1, end_dim=-2)[first_filter[:-1]]          # 0, 1 - x, y
         #print(box_xy.shape)
-        box_wh = torch.exp(output_reshaped[:, ..., 2:4]) * anchors   # 2, 3 - w, h
-        box_wh = box_wh.flatten(start_dim=1, end_dim=-2)[first_filter[:-1]]
-        box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:]).flatten(start_dim=1, end_dim=-2)[first_filter[:-1]] # 5, ... - classes probs
-        #print(first_filter)
-        #print(first_filter[:-2])
-        #print(self.grids[scale_factor].shape)
-        #print(self.grids[scale_factor])
-        #print(self.grids[scale_factor].flatten(end_dim=-2).shape)
-        #print(self.grids[scale_factor].flatten(end_dim=-2))
-        #print(self.grids[scale_factor].flatten(end_dim=-2)[first_filter[1]].shape)
-        #print(self.grids[scale_factor].flatten(end_dim=-2)[first_filter[1]])
+        #print(anchors.shape)
+        #print(output_reshaped.shape)
+        #print(anchors[first_filter[1]])
+        box_wh = torch.exp(output_reshaped[:, ..., 2:4]) * anchors[first_filter[1]]  # 2, 3 - w, h
+        #box_wh = box_wh.flatten(start_dim=0, end_dim=-2)
+        #print('wh',box_wh.shape)
+        #print('xy',box_xy.shape)
+        #box_wh = box_wh.flatten(start_dim=1, end_dim=-2)[first_filter[:-1]]
+        box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:]) # 5, ... - classes probs
+        #print(box_class_probs.shape)
+        #box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:]).flatten(start_dim=1, end_dim=-2)[first_filter[:-1]] # 5, ... - classes probs
         box_xy += self.grids[scale_factor].flatten(end_dim=-2)[first_filter[1]] 
-# WRONG ASWER`
         box_xy /= self.sizes_cuda[scale_factor]
         box_xy -= (box_wh / self.number_two)
         boxes = torch.cat((box_xy, box_xy + box_wh), axis=-1).flatten(end_dim=-2)
