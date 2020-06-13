@@ -124,12 +124,6 @@ class Post(object):
                               (batch_size, (classes_num + 5) * 3, self.sizes[1], self.sizes[1]),
                               (batch_size, (classes_num + 5) * 3, self.sizes[2], self.sizes[2])]
         
-        self.batch_inds = []
-        for i, mask in enumerate(self.masks):
-            batch_inds_vector_len = len(mask) * self.sizes[i] * self.sizes[i]
-            self.batch_inds.append(torch.tensor(np.arange(batch_size)).repeat_interleave(batch_inds_vector_len).cuda())
-
-
 
     def process_batch(self, outputs, raw_sizes):
         outputs_reshaped = []
@@ -200,6 +194,7 @@ class Post(object):
             h, w = raw_sizes[batch]
             boxes[batch_inds == batch] = boxes[batch_inds == batch] * torch.tensor([w, h, w, h])
 
+# CV DNN NMS_BOXES ?
         keep = ops.boxes.batched_nms(boxes, confidences, categories + (batch_inds * self.classes_num), self.nms_threshold)
 
         if len(keep) == 0:
@@ -225,8 +220,6 @@ class Post(object):
 
        # whole_proc = cutotime('whole processing').start()
 
-        anchors = self.anchors_cuda[scale_factor]
-
  # TRY THIS
 
 #        # Reshape to N, height, width, num_anchors, box_params:
@@ -245,22 +238,24 @@ class Post(object):
         first_filter = torch.where(box_confidence >= self.object_threshold)
         #print(output_reshaped.flatten(start_dim=1, end_dim=-2).shape)
         output_reshaped = output_reshaped.flatten(start_dim=1, end_dim=-2)[first_filter[:-1]]
+        total_sigmoid = torch.sigmoid(output_reshaped)
         #print(output_reshaped.shape)
 
         #print('ff',first_filter)
         #print(torch.sigmoid(output_reshaped[:, ..., :2]).shape)
-        box_xy = torch.sigmoid(output_reshaped[:, ..., :2])           # 0, 1 - x, y
-        #box_xy = torch.sigmoid(output_reshaped[:, ..., :2]).flatten(start_dim=1, end_dim=-2)[first_filter[:-1]]          # 0, 1 - x, y
+        box_xy = total_sigmoid[:, ..., :2]           # 0, 1 - x, y
+        #box_xy = torch.sigmoid(output_reshaped[:, ..., :2])           # 0, 1 - x, y
         #print(box_xy.shape)
         #print(anchors.shape)
         #print(output_reshaped.shape)
         #print(anchors[first_filter[1]])
-        box_wh = torch.exp(output_reshaped[:, ..., 2:4]) * anchors[first_filter[1]]  # 2, 3 - w, h
+        #box_wh = total_sigmoid[:, ..., 2:4] * self.anchors_cuda[scale_factor][first_filter[1]]  # 2, 3 - w, h
+        box_wh = torch.exp(output_reshaped[:, ..., 2:4]) * self.anchors_cuda[scale_factor][first_filter[1]]  # 2, 3 - w, h
         #box_wh = box_wh.flatten(start_dim=0, end_dim=-2)
         #print('wh',box_wh.shape)
         #print('xy',box_xy.shape)
         #box_wh = box_wh.flatten(start_dim=1, end_dim=-2)[first_filter[:-1]]
-        box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:]) # 5, ... - classes probs
+        box_class_probs = total_sigmoid[:, ..., 5:] # 5, ... - classes probs
         #print(box_class_probs.shape)
         #box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:]).flatten(start_dim=1, end_dim=-2)[first_filter[:-1]] # 5, ... - classes probs
         box_xy += self.grids[scale_factor].flatten(end_dim=-2)[first_filter[1]] 
@@ -283,22 +278,10 @@ class Post(object):
         #print(box_class_scores.shape)
         pos = torch.where(box_class_scores >= self.object_threshold)
         #print(pos)
-# MAYBE BATCH_INDS SHOULD BE IN CPU????
-        #out = boxes[first_filter[:-1]][pos], box_classes[pos], box_class_scores[pos], self.batch_inds[scale_factor][first_filter[0]][pos[0]]
-        #print(boxes.shape)
-        #print(self.batch_inds[scale_factor][first_filter[0]][pos[0]].shape)
-        #print(self.batch_inds[scale_factor][first_filter[1]][pos[0]])
-        #print(self.batch_inds[scale_factor])
-        #print(len(self.batch_inds[scale_factor]))
-        #print(first_filter[1] + first_filter[0])
-        #print('f[0]',first_filter[0])
-        #print(self.batch_inds[scale_factor][first_filter[1]])
         out = boxes[pos], box_classes[pos], box_class_scores[pos], first_filter[0][pos[0]]
-        #out = boxes[pos], box_classes[pos], box_class_scores[pos], self.batch_inds[scale_factor][first_filter[0]][pos[0]]
-        #out = boxes[first_filter[:-1]][pos], box_classes[pos], box_class_scores[pos], first_filter[0][pos[0]]
-        #out = boxes[pos], box_classes[pos], box_class_scores[pos], pos[0]
-
         
        # whole_proc.stop()
+# https://github.com/opencv/opencv/issues/17148
+# scale_x_y
         return out 
 
