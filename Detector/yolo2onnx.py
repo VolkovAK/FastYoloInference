@@ -135,6 +135,7 @@ class MajorNodeSpecs(object):
         self.name = name
         self.channels = channels
         self.created_onnx_node = False
+        print(name, channels)
         if name is not None and isinstance(channels, int) and channels > 0:
             self.created_onnx_node = True
 
@@ -331,6 +332,7 @@ class WeightLoader(object):
             elif suffix == 'bias':
                 param_shape = [channels_out]
         param_size = np.product(np.array(param_shape))
+        print(conv_params.node_name, param_shape)
         param_data = np.ndarray(
             shape=param_shape,
             dtype='float32',
@@ -387,6 +389,7 @@ class GraphBuilderONNX(object):
                 self.output_tensors[tensor_name]
             output_tensor = helper.make_tensor_value_info(
                 tensor_name, TensorProto.FLOAT, output_dims)
+            print('output', tensor_name, output_dims)
             outputs.append(output_tensor)
         inputs = [self.input_tensor] 
         weight_loader = WeightLoader(weights_file_path)
@@ -443,6 +446,7 @@ class GraphBuilderONNX(object):
             node_creators['shortcut'] = self._make_shortcut_node
             node_creators['route'] = self._make_route_node
             node_creators['upsample'] = self._make_resize_node
+            node_creators['yolo'] = self._make_yolo_node
 
             if layer_type in node_creators.keys():
                 major_node_output_name, major_node_output_channels = \
@@ -570,6 +574,7 @@ class GraphBuilderONNX(object):
             print('Activation not supported.')
 
         self.param_dict[layer_name] = conv_params
+        print(layer_name, conv_params)
         return layer_name_output, filters
 
     def _make_shortcut_node(self, layer_name, layer_dict):
@@ -614,7 +619,11 @@ class GraphBuilderONNX(object):
             assert split_index < 0
             # Increment by one because we skipped the YOLO layer:
             split_index += 1
+            print('before')
+            print([a.name for a in self.major_node_specs[-20:]])
             self.major_node_specs = self.major_node_specs[:split_index]
+            print('after')
+            print([a.name for a in self.major_node_specs[-20:]])
             layer_name = None
             channels = None
         else:
@@ -680,6 +689,25 @@ class GraphBuilderONNX(object):
         self.param_dict[layer_name] = resize_params
         return layer_name, channels
 
+    def _make_yolo_node(self, layer_name, layer_dict):
+        """ 
+        Create YOLO-node. 
+        By now it's only transpose output for faster post-processing
+        """
+        previous_node_specs = self._get_previous_node_specs()
+        inputs = [previous_node_specs.name]
+        print(f'yolo_layer: {inputs}\n{layer_name}')
+
+        yolo_node = helper.make_node(
+            'Transpose',
+            inputs=inputs,
+            outputs=[layer_name],
+            perm=[0, 2, 3, 1],
+            name=layer_name
+        )
+        self._nodes.append(yolo_node)
+        return layer_name, layer_dict
+
 
 def convert(cfg_file_path, weights_file_path, onnx_file_path):
     """Run the DarkNet-to-ONNX conversion for YOLOv3"""
@@ -710,7 +738,8 @@ def convert(cfg_file_path, weights_file_path, onnx_file_path):
             current_size = current_size * cur['stride']
         if cur['type'] == 'yolo':
             anchors_amount = len(cur['mask'].split(','))
-            output_tensor_dims[prev_layer] = [int((5 + cur['classes']) * anchors_amount), int(current_size), int(current_size)]
+            #output_tensor_dims[prev_layer] = [int((5 + cur['classes']) * anchors_amount), int(current_size), int(current_size)]
+            output_tensor_dims[layer] = [int(current_size), int(current_size), int((5 + cur['classes']) * anchors_amount)]
         prev_layer = layer
 
     # Create a GraphBuilderONNX object with the known output tensor dimensions:
