@@ -112,21 +112,21 @@ class Post(object):
         self.image_dims = None
         for i_m, mask in enumerate(self.masks):
             anchor = torch.tensor([self.anchors[i_m][i] for i in mask]).to(torch.float16).cuda()
-            #anchor = anchor.repeat(self.sizes[i_m] * self.sizes[i_m], 1)
             anchor = anchor.reshape([3, 2])
-            #anchor = anchor.reshape([1, 1, 3, 2])
             anchor = anchor / self.input_resolution_yolo
             self.anchors_cuda.append(anchor)
+            #anchor = anchor.reshape([1, 1, 3, 2])  # reshape 1 1 3 2, because 3 anchors in every mask # CHANGE 3 to MASK LEN
 
-        self.output_shapes_initial = [(batch_size, 
-                                      (classes_num + 5),  len(self.masks[i]), 
-                                      self.sizes[i], 
-                                      self.sizes[i]) for i in range(len(self.sizes))]
         self.output_shapes = [(batch_size,
                                self.sizes[i],  self.sizes[i], 
                                len(self.masks[i]),
                                classes_num + 5) for i in range(len(self.sizes))]
-        
+
+        self.batch_inds = []
+        for i, mask in enumerate(self.masks):
+            batch_inds_vector_len = len(mask) * self.sizes[i] * self.sizes[i]
+            self.batch_inds.append(torch.tensor(np.arange(batch_size)).repeat_interleave(batch_inds_vector_len).cuda())
+
 
 
     def process_batch(self, outputs, raw_sizes):
@@ -136,7 +136,6 @@ class Post(object):
             outputs_reshaped.append(output_reshaped)
 
         boxes, categories, confidences, batch_inds = self._process_yolo_output_batch(outputs_reshaped, raw_sizes)
-
         #if boxes.shape[0] != 0:
         #    boxes[:, 2] = boxes[:, 2] - boxes[:, 0]
         #    boxes[:, 3] = boxes[:, 3] - boxes[:, 1]
@@ -154,22 +153,8 @@ class Post(object):
         """
         #tt = cutotime('reshape')
         #tt.start()
-        #print(output.data_ptr(), output.is_contiguous(), output.shape)
-        #output = output.reshape(self.output_shapes_initial[number]) # batch, (5 + 80), 3, h, w
-        #print(output.data_ptr(), output.is_contiguous(), output.shape)
-        #print(output)
-
-        #output = output.permute(0, 3, 4, 1, 2) # batch, h, w, (5+80), 3
-        #print(output.data_ptr(), output.is_contiguous(), output.shape)
         output = output.reshape(self.output_shapes[number]) # batch, h,  w, 3, (5 + 80)
-        
-        #print(output.data_ptr(), output.is_contiguous(), output.shape)
         #tt.stop()
-        #with cutotime('flat'):
-        #    out = output.flatten(start_dim=1, end_dim=-2)
-        #print(out.data_ptr(), out.is_contiguous(), out.shape)
-        #print(output)
-        #print('next')
         return output 
 
     def _process_yolo_output_batch(self, outputs_reshaped, raw_sizes):
@@ -185,7 +170,6 @@ class Post(object):
         # E.g. in YOLOv3-608, there are three output tensors, which we associate with their
         # respective masks. Then we iterate through all output-mask pairs and generate candidates
         # for bounding boxes, their corresponding category predictions and their confidences:
-
         boxes, categories, confidences, batch_indses = list(), list(), list(), list()
         factor = 0
         for output, mask in zip(outputs_reshaped, self.masks):
@@ -206,7 +190,6 @@ class Post(object):
             h, w = raw_sizes[batch]
             boxes[batch_inds == batch] = boxes[batch_inds == batch] * torch.tensor([w, h, w, h])
 
-# CV DNN NMS_BOXES ?
         keep = ops.boxes.batched_nms(boxes, confidences, categories + (batch_inds * self.classes_num), self.nms_threshold)
 
         if len(keep) == 0:
@@ -230,66 +213,53 @@ class Post(object):
         mask -- 2-dimensional tuple with mask specification for this output
         """
 
+ #       whole_proc = cutotime('whole processing').start()
 
-        #box_confidence = torch.sigmoid(output_reshaped[:, ..., 4:5]) # 4 - objectness
-        #with cutotime('sigma obj'):
-        probs = torch.sigmoid(output_reshaped[:, ..., 4:]) # 4 - objectness
-        #with cutotime('multi'):
-        box_scores = probs[..., 0:1] * probs[..., 1:]
-        #print('box_conf',box_confidence)
-        #print(box_scores.shape, box_scores.is_contiguous())
-#        box_scores2 = box_scores.flatten(start_dim=1, end_dim=-2)
-        #with cutotime('where2'):
-#        first_filter2 = torch.where(box_scores2 >= self.object_threshold)
-        #with cutotime('where'):
-        first_filter = torch.where(box_scores >= self.object_threshold)
-        #print('ff',first_filter)
-        #with cutotime('filter'):
-        output_reshaped = output_reshaped[first_filter[:-1]]
-        #total_sigmoid = torch.sigmoid(output_reshaped)
+        anchors = self.anchors_cuda[scale_factor]
 
-#        whole_proc = cutotime('boxes').start()
-        #print(torch.sigmoid(output_reshaped[:, ..., :2]).shape)
-        #box_xy = total_sigmoid[:, ..., :2]           # 0, 1 - x, y
-        #print('xy',box_xy)
-        box_xy = torch.sigmoid(output_reshaped[:, ..., :2])           # 0, 1 - x, y
-        #print(box_xy.shape)
-        #print(anchors.shape)
-        #print(output_reshaped.shape)
-        #print(anchors[first_filter[1]])
-        box_wh = torch.exp(output_reshaped[:, ..., 2:4]) 
-        #print(box_wh.shape, self.anchors_cuda[scale_factor].shape, self.anchors_cuda[scale_factor][first_filter[3], :].shape)
-        box_wh = box_wh * self.anchors_cuda[scale_factor][first_filter[3]]  # 2, 3 - w, h
-        #print('wh',box_wh)
-        #box_wh = box_wh.flatten(start_dim=0, end_dim=-2)
-        #print('wh',box_wh.shape)
-        #print('xy',box_xy.shape)
-        #box_wh = box_wh.flatten(start_dim=1, end_dim=-2)[first_filter[:-1]]
-        #box_class_probs = total_sigmoid[:, ..., 5:] # 5, ... - classes probs
-        #print('bcp',box_class_probs)
-        #print(box_class_probs.shape)
-        #print(box_xy.shape, self.grids[scale_factor].shape)
-        #whole_proc.stop()
-        #whole_proc = cutotime('boxes2').start()
-        box_xy += self.grids[scale_factor][first_filter[1], first_filter[2], first_filter[3]] 
-        #print('xy',box_xy)
+ # TRY THIS
+
+#        # Reshape to N, height, width, num_anchors, box_params:
+#        box_wh = torch.exp(output_reshaped[:, ..., 2:4]) * anchors   # 2, 3 - w, h
+#        loh = torch.sigmoid(output_reshaped)
+#        box_xy = loh[:, ..., :2] + self.grids[scale_factor]                          
+#        box_xy /= self.sizes_cuda[scale_factor]
+#        box_xy -= (box_wh / self.number_two)
+#        boxes = torch.cat((box_xy, box_xy + box_wh), axis=-1)
+#        out = boxes, loh[:, ..., 4:5], loh[:, ..., 5:]
+
+
+# FILTER BEFORE SIGMOIDS?
+        box_xy = torch.sigmoid(output_reshaped[:, ..., :2])          # 0, 1 - x, y
+        box_wh = torch.exp(output_reshaped[:, ..., 2:4]) * anchors   # 2, 3 - w, h
+        box_confidence = torch.sigmoid(output_reshaped[:, ..., 4:5]).flatten(end_dim=-2) # 4 - objectness
+        box_class_probs = torch.sigmoid(output_reshaped[:, ..., 5:]).flatten(end_dim=-2) # 5, ... - classes probs
+        box_xy += self.grids[scale_factor]                          
         box_xy /= self.sizes_cuda[scale_factor]
         box_xy -= (box_wh / self.number_two)
-        #print('xy',box_xy)
         boxes = torch.cat((box_xy, box_xy + box_wh), axis=-1).flatten(end_dim=-2)
-        #whole_proc.stop()
-        #whole_proc = cutotime('max').start()
 
-        #box_scores = box_confidence[first_filter[:-1]] * box_class_probs
-        #box_scores = box_confidence[first_filter[:-1]] * box_class_probs[first_filter[:-1]]
-        box_class_scores = torch.max(box_scores[first_filter[:-1]], axis=-1)
+        first_filter = torch.where(box_confidence >= self.object_threshold)
+        #box_confidence = box_confidence[first_filter[:-1]]
+        #box_class_probs = box_class_probs[first_filter[:-1]]
+        #boxes = boxes[first_filter[:-1]]
+
+        box_scores = box_confidence[first_filter[:-1]] * box_class_probs[first_filter[:-1]]
+        box_class_scores = torch.max(box_scores, axis=-1)
         box_classes = box_class_scores.indices
-        #pos = torch.where(box_class_scores >= self.object_threshold)
-        #print(pos)
-        out = boxes, box_classes, box_scores[first_filter], first_filter[0]
-        
-        #whole_proc.stop()
+        box_class_scores = box_class_scores.values
+        pos = torch.where(box_class_scores >= self.object_threshold)
+#        print(self.batch_inds[scale_factor].shape, boxes.shape)
+#        print(self.batch_inds[scale_factor][first_filter[0]][pos[0]])
+#        print(first_filter)
+# MAYBE BATCH_INDS SHOULD BE IN CPU????
+#        print(pos)
+        out = boxes[first_filter[:-1]][pos], box_classes[pos], box_class_scores[pos], self.batch_inds[scale_factor][first_filter[0]][pos[0]]
+        #out = boxes[first_filter[:-1]][pos], box_classes[pos], box_class_scores[pos], first_filter[0][pos[0]]
+        #out = boxes[pos], box_classes[pos], box_class_scores[pos], pos[0]
+#        whole_proc.stop()
+
 # https://github.com/opencv/opencv/issues/17148
-# scale_x_y
+# scale_x_y         
         return out 
 
